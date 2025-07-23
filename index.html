@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>歌词Allignment可视化工具</title>
+    <style>
+        /* 整体布局与主题 */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 80%;
+            max-width: 700px;
+            background-color: #1e1e1e;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            height: 90vh;
+        }
+
+        h1 {
+            text-align: center;
+            margin-top: 0;
+            color: #ffffff;
+            border-bottom: 1px solid #333;
+            padding-bottom: 15px;
+        }
+        
+        /* 音频播放器 */
+        audio {
+            width: 100%;
+            margin-bottom: 15px;
+            filter: invert(0.8) sepia(0.5) saturate(5) hue-rotate(180deg);
+        }
+
+        /* 文件选择器区域 */
+        .file-controls {
+            display: flex;
+            justify-content: space-around;
+            gap: 20px;
+            margin-bottom: 20px;
+            background-color: #2a2a2a;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .file-controls label {
+            font-size: 0.9em;
+            display: block;
+            margin-bottom: 5px;
+            color: #aaa;
+        }
+        .file-controls input[type="file"] {
+            color: #ccc;
+            font-size: 0.9em;
+        }
+        /* 美化文件选择按钮 */
+        input[type="file"]::file-selector-button {
+            border-radius: 4px;
+            padding: 4px 10px;
+            border: 1px solid #555;
+            background-color: #444;
+            color: #e0e0e0;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        input[type="file"]::file-selector-button:hover {
+            background-color: #555;
+        }
+
+
+        /* 歌词容器 */
+        #lyrics-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding-right: 15px; /* for scrollbar */
+            scroll-behavior: smooth;
+            border-top: 1px solid #333;
+            padding-top: 10px;
+        }
+        
+        /* 歌词段落/行 */
+        .segment {
+            margin: 20px 0;
+            font-size: 1.6em;
+            line-height: 1.7;
+            text-align: center;
+            opacity: 0.4;
+            transition: opacity 0.4s ease, transform 0.4s ease;
+            transform: scale(0.95);
+        }
+
+        .segment.active {
+            opacity: 1;
+            font-weight: bold;
+            transform: scale(1);
+            color: #ffffff;
+        }
+
+        /* 歌词中的每个字 */
+        .word {
+            transition: background-color 0.1s ease, color 0.2s ease;
+            border-radius: 4px;
+            padding: 0 2px;
+        }
+
+        /* 当前正在播放的字的高亮效果 */
+        .segment.active .word.active {
+            background-color: #03A9F4; /* 醒目的蓝色背景 */
+            color: #ffffff !important; /* 强制覆盖置信度颜色 */
+        }
+        
+        /* 根据置信度上色 */
+        .confidence-high { color: #E0E0E0; }
+        .confidence-mid { color: #FFC107; }
+        .confidence-low { color: #F44336; }
+        
+        /* 滚动条美化 */
+        #lyrics-container::-webkit-scrollbar { width: 8px; }
+        #lyrics-container::-webkit-scrollbar-track { background: #2c2c2c; border-radius: 4px; }
+        #lyrics-container::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
+        #lyrics-container::-webkit-scrollbar-thumb:hover { background: #777; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>通用歌词可视化工具</h1>
+        
+        <!-- 音频播放器初始没有 src -->
+        <audio id="audio-player" controls></audio>
+
+        <!-- 将两个文件选择器放在一起 -->
+        <div class="file-controls">
+            <div>
+                <label for="audio-uploader">1. 选择音频文件 (mp3, wav, etc.)</label>
+                <input type="file" id="audio-uploader" accept="audio/*">
+            </div>
+            <div>
+                <label for="json-uploader">2. 选择歌词文件 (.json)</label>
+                <input type="file" id="json-uploader" accept=".json,application/json">
+            </div>
+        </div>
+
+        <div id="lyrics-container">
+             <p style="text-align:center; opacity:0.5;">请先选择一个音频文件和对应的歌词JSON文件</p>
+        </div>
+    </div>
+
+    <script>
+        const audioPlayer = document.getElementById('audio-player');
+        const audioUploader = document.getElementById('audio-uploader');
+        const jsonUploader = document.getElementById('json-uploader');
+        const lyricsContainer = document.getElementById('lyrics-container');
+        
+        let lyricsData = null;
+
+        // **处理音频文件选择**
+        audioUploader.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // 使用 URL.createObjectURL 为本地文件创建一个临时的 URL
+            const objectURL = URL.createObjectURL(file);
+            audioPlayer.src = objectURL;
+
+            // 可选：当音频播放完毕或更换新文件时，释放旧的 URL 以节省内存
+            // audioPlayer.addEventListener('ended', () => URL.revokeObjectURL(objectURL), { once: true });
+        });
+        
+        // 处理JSON文件选择
+        jsonUploader.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    lyricsData = JSON.parse(e.target.result);
+                    renderLyrics();
+                } catch (error) {
+                    lyricsContainer.innerHTML = `<p style="color:red; text-align:center;">错误：无法解析JSON文件。请检查文件格式。</p>`;
+                    console.error("JSON Parsing Error:", error);
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        function getConfidenceClass(score) {
+            if (score < 0.5) return 'confidence-low';
+            if (score <= 0.8) return 'confidence-mid';
+            return 'confidence-high';
+        }
+
+        function renderLyrics() {
+            if (!lyricsData) return;
+
+            lyricsContainer.innerHTML = '';
+            lyricsData.segments.forEach((segment) => {
+                const p = document.createElement('p');
+                p.className = 'segment';
+                p.dataset.start = segment.start;
+                p.dataset.end = segment.end;
+
+                segment.words.forEach((word) => {
+                    const span = document.createElement('span');
+                    span.className = `word ${getConfidenceClass(word.score)}`;
+                    span.textContent = word.word;
+                    span.dataset.start = word.start;
+                    span.dataset.end = word.end;
+                    p.appendChild(span);
+                });
+
+                lyricsContainer.appendChild(p);
+            });
+        }
+        
+        let lastActiveSegment = null;
+
+        function updateHighlight() {
+            if (!lyricsData || audioPlayer.paused || !audioPlayer.src) {
+                requestAnimationFrame(updateHighlight);
+                return;
+            }
+
+            const currentTime = audioPlayer.currentTime;
+            
+            const allSegments = lyricsContainer.querySelectorAll('.segment');
+            let activeSegment = null;
+            
+            for (const segment of allSegments) {
+                const start = parseFloat(segment.dataset.start);
+                const end = parseFloat(segment.dataset.end);
+                if (currentTime >= start && currentTime <= end) {
+                    segment.classList.add('active');
+                    activeSegment = segment;
+                } else {
+                    segment.classList.remove('active');
+                }
+            }
+
+            if (activeSegment && activeSegment !== lastActiveSegment) {
+                activeSegment.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                lastActiveSegment = activeSegment;
+            }
+
+            const activeWords = lyricsContainer.querySelectorAll('.segment.active .word');
+            activeWords.forEach(word => {
+                const start = parseFloat(word.dataset.start);
+                const end = parseFloat(word.dataset.end);
+                word.classList.toggle('active', currentTime >= start && currentTime < end);
+            });
+            
+            requestAnimationFrame(updateHighlight);
+        }
+        
+        // 页面加载后就启动动画循环
+        window.addEventListener('DOMContentLoaded', () => {
+             requestAnimationFrame(updateHighlight);
+        });
+    </script>
+
+</body>
+</html>
